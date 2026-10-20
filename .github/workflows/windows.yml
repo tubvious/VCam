@@ -1,0 +1,45 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - uses: NuGet/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore windows/VCamSample.sln
+
+      - name: Build (Release x64)
+        shell: pwsh
+        run: |
+          # The projects ask for VS 2026 (v145); fall back to VS 2022 (v143) on older runners.
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $major = [int](& $vswhere -latest -property installationVersion).Split('.')[0]
+          $toolset = if ($major -ge 18) { 'v145' } else { 'v143' }
+          Write-Host "Visual Studio $major, toolset $toolset"
+          msbuild windows/VCamSample.sln /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=$toolset
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item windows/x64/Release/VCamSample.exe out/
+          Copy-Item windows/x64/Release/VCamSampleSource.dll out/
+          Copy-Item windows/package/* out/
+          Copy-Item windows/LICENSE-VCamSample out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VCam-S1-test-camera
+          path: out/
